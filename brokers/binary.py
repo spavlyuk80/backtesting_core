@@ -1,0 +1,2 @@
+BROKER_NAME = "binary"
+
