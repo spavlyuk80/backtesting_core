@@ -1,89 +1,135 @@
-#!/usr/bin/env python
-# -*- coding:utf-8 -*-
+from personal_do_not_git import IG
+import requests
+from pprint import pprint as pp
+import json
 
-"""
-IG Markets REST API sample with Python
-2015 FemtoTrader
-"""
-
-from trading_ig import IGService
-from trading_ig.config import config
 import logging
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 
-# if you need to cache to DB your requests
-from datetime import timedelta
-import requests_cache
+#import http.client
+
+#httpclient_logger = logging.getLogger("http.client")
+
+def httpclient_logging_patch(level=logging.DEBUG):
+    """Enable HTTPConnection debug logging to the logging framework"""
+
+    def httpclient_log(*args):
+        httpclient_logger.log(level, " ".join(args))
+
+    # mask the print() built-in in the http.client module to use
+    # logging instead
+    http.client.print = httpclient_log
+    # enable debugging
+    http.client.HTTPConnection.debuglevel = 1
+
+class Broker():
+    pass
+
+class IG(Broker):
+
+    personal = IG()
+
+    ## init
+    sessionurl = None
+    marketnavigation = None
+    
+    ### trading
+    neworderurl = None
+    closeorderurl = None
+    checkorderurl = None
+    positionsurl = None
+    pricesurl = None
+    marketsurl = None
+    updateorderurl = None
+    transactionhistoryurl = None
+    confirmsurl = None
+
+    ### other parts of request
+    headers = None
+    headers_v2 = None
+    payload = None
+    
+
+    def __init__(self):
+
+        self.timeframes = {'m30':'MINUTE_30',
+                            'm1':'MINUTE',
+                            'm10':'MINUTE_10'
+        }
+
+        if self.personal.is_demo():
+            self.ig_host="demo-api.ig.com"
+        else:
+            self.ig_host="api.ig.com"
+
+        #init
+        self.sessionurl = "https://%s/gateway/deal/session" % self.ig_host
+
+        #trading and orders
+        self.neworderurl = 'https://%s/gateway/deal/positions/otc' % self.ig_host
+        self.closeorderurl = 'https://%s/gateway/deal/positions/otc' % self.ig_host
+        self.checkorderurl = 'https://%s/gateway/deal/confirms/' % self.ig_host
+        self.positionsurl = 'https://%s/gateway/deal/positions' % self.ig_host
+        self.pricesurl = 'https://' + self.ig_host + '/gateway/deal/prices/%s/%s/2'
+
+        self.marketsurl = 'https://'+ self.ig_host + '/gateway/deal/markets/%s'
+        self.updateorderurl = 'https://' + self.ig_host + '/gateway/deal/positions/otc/%s'
+        self.transactionhistoryurl = 'https://' + self.ig_host + '/gateway/deal/history/transactions/ALL/%s/%s'
+        self.confirmsurl = 'https://'+ self.ig_host + '/gateway/deal/confirms/%s'
+
+        self.marketnavigation = f"https://{self.ig_host}/gateway/deal/marketnavigation"
+
+        self.headers = {'content-type': 'application/json; charset=UTF-8', 
+                'Accept': 'application/json; charset=UTF-8',
+                'version':1, 'X-IG-API-KEY': self.personal.api_key}
+
+        self.headers_v2 = {'content-type': 'application/json; charset=UTF-8',
+                        'Accept': 'application/json; charset=UTF-8', 
+                        'version':'2', 
+                        'X-IG-API-KEY': self.personal.api_key}
+
+        self.payload = {'identifier': self.personal.username, 
+                    'password': self.personal.password}
+        
+        self.get_historical_url = 'https://' + self.ig_host + '/gateway/deal/prices/'
 
 
-def main():
-    logging.basicConfig(level=logging.DEBUG)
+    def connect(self):
+        
+        #httpclient_logging_patch()
+        self.connection = requests.post(self.sessionurl, 
+                                        data=json.dumps(self.payload), 
+                                        headers=self.headers_v2, 
+                                        proxies=self.personal.proxies)
 
-    expire_after = timedelta(hours=1)
-    session = requests_cache.CachedSession(
-        cache_name="cache", backend="sqlite", expire_after=expire_after
-    )
-    # set expire_after=None if you don't want cache expiration
-    # set expire_after=0 if you don't want to cache queries
+        self.headers_after_login = {'content-type': 'application/json; charset=UTF-8',
+                        'Accept': 'application/json; charset=UTF-8', 
+                        'version':'3', 
+                        'X-IG-API-KEY': self.personal.api_key,
+                        'X-SECURITY-TOKEN':self.connection.headers.get('X-SECURITY-TOKEN'),
+                        'CST':self.connection.headers.get('CST')}
 
-    # config = IGServiceConfig()
+    def get_historical(self, epic, resolution, start, end):
 
-    # no cache
-    ig_service = IGService(
-        config.username, config.password, config.api_key, config.acc_type
-    )
+        data = {'resolution':resolution, 'from': start, 'to': end, 'pageSize': '0'}
 
-    # if you want to globally cache queries
-    # ig_service = IGService(config.username, config.password, config.api_key, config.acc_type, session)
+        self.history = requests.get(self.get_historical_url + epic, params = data,
+                        headers = self.headers_after_login, proxies = self.personal.proxies)
 
-    ig_service.create_session()
-
-    accounts = ig_service.fetch_accounts()
-    print("accounts:\n%s" % accounts)
-
-    # account_info = ig_service.switch_account(config.acc_number, False)
-    # print(account_info)
-
-    # open_positions = ig_service.fetch_open_positions()
-    # print("open_positions:\n%s" % open_positions)
-
-    print("")
-
-    # working_orders = ig_service.fetch_working_orders()
-    # print("working_orders:\n%s" % working_orders)
-
-    print("")
-
-    # epic = 'CS.D.EURUSD.MINI.IP'
-    epic = "IX.D.ASX.IFM.IP"  # US (SPY) - mini
-
-    resolution = "D"
-    # see from pandas.tseries.frequencies import to_offset
-    resolution = 'H'
-    # resolution = '1Min'
-
-    #num_points = 10
-    #response = ig_service.fetch_historical_prices_by_epic_and_num_points(
-    #    epic, resolution, num_points
-    #)
-    # Exception: error.public-api.exceeded-account-historical-data-allowance
-
-    # if you want to cache this query
-    # response = ig_service.fetch_historical_prices_by_epic_and_num_points(epic, resolution, num_points, session)
-
-    #df_ask = response['prices']['ask']
-    #print("ask prices:\n%s" % df_ask)
-
-    (start_date, end_date) = ('2018-09-15', '2018-09-28')
-    response = ig_service.fetch_historical_prices_by_epic_and_date_range(epic, resolution, start_date, end_date)
-
-    # if you want to cache this query
-    # response = ig_service.fetch_historical_prices_by_epic_and_date_range(epic, resolution, start_date, end_date, session)
-    df_ask = response['prices']['ask']
-    print("ask prices:\n%s" % df_ask)
-
+        pp(self.history.json())
 
 if __name__ == "__main__":
-    main()
+
+    r = IG()
+    r.connect()
+
+    epic = 'CS.D.EURUSD.CFD.IP'
+    start = "2020-02-01"
+    end = "2020-03-01"
+    resolution = r.timeframes['m10']
+
+    r.get_historical(epic, resolution, start, end)
+    
+
+
