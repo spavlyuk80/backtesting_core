@@ -117,7 +117,7 @@ class IG(Broker):
         self.history = requests.get(self.get_historical_url + epic, params = data,
                         headers = self.headers_after_login, proxies = self.personal.proxies)
 
-        pp(self.history.json())
+        pp(self.history.status_code)
 
 if __name__ == "__main__":
 
